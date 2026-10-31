@@ -27,9 +27,6 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Grant Execute Permission for Gradle Wrapper
         run: |
           if [ ! -f ./gradlew ]; then
