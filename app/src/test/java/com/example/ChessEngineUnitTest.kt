@@ -65,4 +65,43 @@ class ChessEngineUnitTest {
         assertEquals("f7", result.bestMove?.to?.name)
         assertTrue("Best move should evaluate as mate or massive advantage", result.evaluationCp > 5000)
     }
+
+    @Test
+    fun testBlackburneShillingGambitDetection() = runBlocking {
+        val engine = ChessEngine()
+        val settings = CalculationSettings(
+            activeProfile = EngineProfile.getById(ModeId.PROFAST),
+            isFast = true,
+            isSuperFast = true
+        )
+
+        // Position after 1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5?
+        val board = Board.fromFen("r1bqkbnr/pppp1ppp/8/4N3/2Bn4/8/PPPP1PPP/RNBQK2R b KQkq - 0 4")
+        val result = engine.analyze(board, settings, playerPerspective = PieceColor.BLACK)
+
+        assertNotNull("Engine should return best move for Black", result.bestMove)
+        assertEquals("d8", result.bestMove?.from?.name)
+        assertEquals("g5", result.bestMove?.to?.name)
+        assertTrue("Qg5 evaluation should be positive for Black", result.evaluationCp > 0)
+    }
+
+    @Test
+    fun testSmotheredMateDetection() = runBlocking {
+        val engine = ChessEngine()
+        val settings = CalculationSettings(
+            activeProfile = EngineProfile.getById(ModeId.PROFAST),
+            isFast = true,
+            isSuperFast = true
+        )
+
+        // Position after 1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7 Qxg2 6. Rf1 Qxe4+ 7. Be2
+        // Black to play and mate in 1: Nf3#
+        val board = Board.fromFen("r1b1k1nr/pppp1Npp/8/8/3nq3/8/PPPPBP1P/RNBQKR2 b Qkq - 0 7")
+        val result = engine.analyze(board, settings, playerPerspective = PieceColor.BLACK)
+
+        assertNotNull("Engine should find checkmating move", result.bestMove)
+        assertEquals("d4", result.bestMove?.from?.name)
+        assertEquals("f3", result.bestMove?.to?.name)
+        assertTrue("Mate in 1 should evaluate to >15000", result.evaluationCp >= 15000)
+    }
 }

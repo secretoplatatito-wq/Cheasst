@@ -163,8 +163,27 @@ fun AnalysisScreen(
         // Board Action Controls Row
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            val playerColor by viewModel.playerColor.collectAsState()
+
+            // Player Color Toggle
+            Button(
+                onClick = { viewModel.togglePlayerColor() },
+                colors = ButtonDefaults.buttonColors(containerColor = ElevatedSlate),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.border(1.dp, CardBorderSlate, RoundedCornerShape(16.dp))
+            ) {
+                Text(
+                    text = if (playerColor == PieceColor.BLACK) "BLACK ♚" else "WHITE ♔",
+                    color = CyberCyan,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             IconButton(
                 onClick = { viewModel.undoMove() },
                 enabled = moveHistory.isNotEmpty(),

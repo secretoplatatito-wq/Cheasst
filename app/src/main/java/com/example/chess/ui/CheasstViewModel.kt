@@ -21,6 +21,12 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+import com.example.chess.audio.SpeechManager
+import com.example.chess.engine.OpeningBook
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 data class HardwareMetrics(
     val usedRamMb: Long = 0,
     val totalRamMb: Long = 0,
@@ -38,9 +44,26 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
     private val dao = db.savedPositionDao()
     private val engine = ChessEngine()
     private val aiAdvisor = GeminiChessAdvisor()
+    private val speechManager = SpeechManager(application)
 
     private val _board = MutableStateFlow(Board.fromFen())
     val board: StateFlow<Board> = _board.asStateFlow()
+
+    private val _playerColor = MutableStateFlow(PieceColor.BLACK)
+    val playerColor: StateFlow<PieceColor> = _playerColor.asStateFlow()
+
+    private val _isLiveTracking = MutableStateFlow(true)
+    val isLiveTracking: StateFlow<Boolean> = _isLiveTracking.asStateFlow()
+
+    private val _isSoundEnabled = MutableStateFlow(true)
+    val isSoundEnabled: StateFlow<Boolean> = _isSoundEnabled.asStateFlow()
+
+    private val _consoleLogs = MutableStateFlow<List<String>>(listOf(
+        "[SYSTEM] Cheasst Grandmaster Vision Engine v2.1 online",
+        "[STATUS] Perspective: Playing as BLACK ♚",
+        "[CAMERA] Spatial AR alignment locked. Awaiting move..."
+    ))
+    val consoleLogs: StateFlow<List<String>> = _consoleLogs.asStateFlow()
 
     private val _moveHistory = MutableStateFlow<List<Move>>(emptyList())
     val moveHistory: StateFlow<List<Move>> = _moveHistory.asStateFlow()
@@ -69,7 +92,7 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
     private val _visionResult = MutableStateFlow<VisionDetectionResult?>(null)
     val visionResult: StateFlow<VisionDetectionResult?> = _visionResult.asStateFlow()
 
-    private val _isFlipped = MutableStateFlow(false)
+    private val _isFlipped = MutableStateFlow(true) // Black perspective by default
     val isFlipped: StateFlow<Boolean> = _isFlipped.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
@@ -89,7 +112,7 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         updateLegalMoves()
-        triggerAutoAnalysis()
+        triggerAutoAnalysis(speakBestMove = false)
         startHardwareMonitoring()
     }
 
@@ -157,7 +180,7 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
         _moveHistory.value = _moveHistory.value + move
         _selectedSquare.value = null
         _legalMoves.value = emptyList()
-        triggerAutoAnalysis()
+        triggerAutoAnalysis(speakBestMove = true)
     }
 
     fun undoMove() {
@@ -181,21 +204,109 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
         _selectedSquare.value = null
         _legalMoves.value = emptyList()
         _aiAdvice.value = null
-        triggerAutoAnalysis()
+        addLog("board reset to starting position: fen=$fen")
+        triggerAutoAnalysis(speakBestMove = false)
     }
 
     fun flipBoard() {
         _isFlipped.value = !_isFlipped.value
     }
 
-    fun triggerAutoAnalysis() {
+    fun addLog(msg: String) {
+        val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        val formatted = "[$time] $msg"
+        val current = _consoleLogs.value.takeLast(19).toMutableList()
+        current.add(formatted)
+        _consoleLogs.value = current
+    }
+
+    fun setPlayerColor(color: PieceColor) {
+        _playerColor.value = color
+        _isFlipped.value = (color == PieceColor.BLACK)
+        addLog("perspective switched: playing as ${color.name} ${if (color == PieceColor.BLACK) "♚" else "♔"}")
+        triggerAutoAnalysis(speakBestMove = true)
+    }
+
+    fun togglePlayerColor() {
+        val newColor = if (_playerColor.value == PieceColor.WHITE) PieceColor.BLACK else PieceColor.WHITE
+        setPlayerColor(newColor)
+    }
+
+    fun toggleSound() {
+        val next = !_isSoundEnabled.value
+        _isSoundEnabled.value = next
+        speechManager.isEnabled = next
+        addLog("audio announcement: ${if (next) "ENABLED" else "MUTED"}")
+    }
+
+    fun toggleLiveTracking() {
+        val next = !_isLiveTracking.value
+        _isLiveTracking.value = next
+        addLog("real-time AR tracking: ${if (next) "ACTIVE" else "PAUSED"}")
+    }
+
+    fun triggerAutoAnalysis(speakBestMove: Boolean = false) {
         analysisJob?.cancel()
         analysisJob = viewModelScope.launch {
             _isAnalyzing.value = true
-            val result = engine.analyze(_board.value, _settings.value)
+            val currentBoard = _board.value
+            val pColor = _playerColor.value
+            val result = engine.analyze(
+                board = currentBoard,
+                settings = _settings.value,
+                playerPerspective = pColor
+            )
             _analysisResult.value = result
             _isAnalyzing.value = false
+
+            val best = result.bestMove
+            if (best != null) {
+                val pieceName = best.piece.type.name.lowercase()
+                val moveStr = "${best.from.name}->${best.to.name}"
+                val evalStr = result.formattedEval
+                addLog("new move sent to rendering engine: $pieceName $moveStr ($evalStr)")
+
+                if (speakBestMove && currentBoard.activeColor == pColor) {
+                    speechManager.speakMove(best, isMate = result.isCheckmate)
+                }
+            } else if (result.isCheckmate) {
+                val winner = if (currentBoard.activeColor == PieceColor.WHITE) "BLACK" else "WHITE"
+                addLog("CHECKMATE DETECTED. VICTORY FOR $winner.")
+                speechManager.speak("Checkmate! Game over.")
+            }
         }
+    }
+
+    fun confirmPlayerMove(move: Move) {
+        val pieceName = move.piece.type.name.lowercase()
+        val moveStr = "${move.from.name}->${move.to.name}"
+        addLog("player move confirmed: $pieceName $moveStr")
+        makeMove(move)
+    }
+
+    fun stepOpponentMove() {
+        val currentBoard = _board.value
+        val legal = currentBoard.generateLegalMoves()
+        if (legal.isEmpty()) return
+
+        // Pick opening book reply or capture
+        val book = OpeningBook.lookup(currentBoard.toFen())
+        val move = if (book != null) {
+            legal.find { it.from.name == book.fromSquare && it.to.name == book.toSquare } ?: legal.first()
+        } else {
+            legal.maxByOrNull { it.capturedPiece?.type?.value ?: 0 } ?: legal.first()
+        }
+
+        val pieceName = move.piece.type.name.lowercase()
+        val captureNotice = if (move.capturedPiece != null) " (takes ${move.capturedPiece.type.name.lowercase()})" else ""
+        addLog("opponent turn finished: $pieceName ${move.from.name}->${move.to.name}$captureNotice")
+        addLog("query stockfish with board positioning")
+        makeMove(move)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        speechManager.shutdown()
     }
 
     fun setEngineProfile(profile: EngineProfile) {

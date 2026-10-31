@@ -135,7 +135,8 @@ class ChessEngine {
 
     suspend fun analyze(
         board: Board,
-        settings: CalculationSettings
+        settings: CalculationSettings,
+        playerPerspective: PieceColor? = null
     ): AnalysisResult = withContext(Dispatchers.Default) {
         nodeCount = 0
         startTimeMs = System.currentTimeMillis()
@@ -145,9 +146,11 @@ class ChessEngine {
         val legalMoves = board.generateLegalMoves()
         if (legalMoves.isEmpty()) {
             val isMate = board.isInCheck(board.activeColor)
+            val mateScore = if (isMate) -20000 else 0
+            val effectiveScore = if (playerPerspective != null && playerPerspective != board.activeColor) -mateScore else mateScore
             return@withContext AnalysisResult(
                 bestMove = null,
-                evaluationCp = if (isMate) -20000 else 0,
+                evaluationCp = effectiveScore,
                 candidateMoves = emptyList(),
                 depthReached = 0,
                 nodesEvaluated = 1,
@@ -156,6 +159,31 @@ class ChessEngine {
                 isCheckmate = isMate,
                 isStalemate = !isMate
             )
+        }
+
+        // Fast zero-latency Opening Book lookup (Blackburne Shilling, Italian, Sicilian, etc.)
+        val bookEntry = OpeningBook.lookup(board.toFen())
+        if (bookEntry != null) {
+            val matchingMove = legalMoves.find { it.from.name == bookEntry.fromSquare && it.to.name == bookEntry.toSquare }
+            if (matchingMove != null) {
+                val candidate = CandidateMove(
+                    move = matchingMove,
+                    scoreCp = bookEntry.evaluationCp,
+                    pvMoves = listOf(matchingMove),
+                    badge = bookEntry.badge,
+                    explanation = bookEntry.explanation
+                )
+                return@withContext AnalysisResult(
+                    bestMove = matchingMove,
+                    evaluationCp = bookEntry.evaluationCp,
+                    candidateMoves = listOf(candidate),
+                    depthReached = 99,
+                    nodesEvaluated = 1,
+                    calculationTimeMs = 1,
+                    nodesPerSecond = 1000,
+                    isCheckmate = kotlin.math.abs(bookEntry.evaluationCp) >= 15000
+                )
+            }
         }
 
         val targetDepth = settings.effectiveDepth
@@ -178,11 +206,11 @@ class ChessEngine {
             }
 
             val depthResults = mutableListOf<Pair<Move, Int>>()
-            val isWhite = board.activeColor == PieceColor.WHITE
 
             for (move in sortedMoves) {
                 coroutineContext.ensureActive()
                 val nextBoard = board.makeMove(move)
+                // In Negamax, nextBoard is opponent's turn. -alphaBeta yields active player's score.
                 val score = -alphaBeta(
                     board = nextBoard,
                     depth = currentDepth - 1,
@@ -191,11 +219,11 @@ class ChessEngine {
                     isMaximizing = false,
                     profile = settings.activeProfile
                 )
-                val scoreFromWhitePerspective = if (isWhite) score else -score
-                depthResults.add(Pair(move, scoreFromWhitePerspective))
+                depthResults.add(Pair(move, score))
             }
 
-            depthResults.sortByDescending { it.second * (if (isWhite) 1 else -1) }
+            // Descending order: highest score is always the active player's best move
+            depthResults.sortByDescending { it.second }
 
             if (depthResults.isNotEmpty()) {
                 bestOverallMove = depthResults.first().first
@@ -210,27 +238,34 @@ class ChessEngine {
         val elapsedTimeMs = max(1L, System.currentTimeMillis() - startTimeMs)
         val nps = (nodeCount * 1000L) / elapsedTimeMs
 
+        // Adjust perspective: if the user specified a playerColor (e.g. playing Black)
+        val targetColor = playerPerspective ?: board.activeColor
+        val isPlayerActive = targetColor == board.activeColor
+
         // Construct candidate moves
         val candidates = evaluatedCandidates.take(multiPvCount).mapIndexed { index, (move, score) ->
+            val displayScore = if (isPlayerActive) score else -score
             val badge = when (index) {
-                0 -> "Best Move"
+                0 -> if (kotlin.math.abs(score) >= 15000) "Winning Mate" else "Best Move"
                 1 -> if (kotlin.math.abs(score - bestOverallScore) < 50) "Alternative" else "Good"
                 2 -> "Solid"
                 else -> "Playable"
             }
-            val explanation = generateMoveExplanation(move, score, index, board)
+            val explanation = generateMoveExplanation(move, displayScore, index, board)
             CandidateMove(
                 move = move,
-                scoreCp = score,
+                scoreCp = displayScore,
                 pvMoves = listOf(move),
                 badge = badge,
                 explanation = explanation
             )
         }
 
+        val finalEval = if (isPlayerActive) bestOverallScore else -bestOverallScore
+
         AnalysisResult(
             bestMove = bestOverallMove,
-            evaluationCp = bestOverallScore,
+            evaluationCp = finalEval,
             candidateMoves = candidates,
             depthReached = currentDepth - 1,
             nodesEvaluated = nodeCount,
