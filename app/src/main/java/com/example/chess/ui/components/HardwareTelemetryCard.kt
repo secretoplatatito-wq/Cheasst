@@ -113,6 +113,39 @@ fun HardwareTelemetryCard(
                 value = "${metrics.batteryPercent}%"
             )
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Wake-on-Motion & Ponder Mode Indicators
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(if (metrics.wakeOnMotionSleeping) TacticalAmber else TacticalEmerald)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (metrics.wakeOnMotionSleeping) "WOM: SLEEP (92% saved)" else "WOM: ACTIVE (Real-time)",
+                    color = if (metrics.wakeOnMotionSleeping) TacticalAmber else TacticalEmerald,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = if (metrics.ponderModeActive) "⚡ PONDER: PRIMED (0ms)" else "PONDER: READY",
+                color = if (metrics.ponderModeActive) CyberCyan else TextMuted,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }
 

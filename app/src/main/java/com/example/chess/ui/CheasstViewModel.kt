@@ -27,6 +27,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+data class PonderPrediction(
+    val expectedOpponentMove: Move,
+    val instantCounterMove: Move,
+    val predictedEval: String,
+    val calculationDepth: Int = 18,
+    val isPonderReady: Boolean = true
+)
+
 data class HardwareMetrics(
     val usedRamMb: Long = 0,
     val totalRamMb: Long = 0,
@@ -37,7 +45,10 @@ data class HardwareMetrics(
     val tempCacheKb: Long = 124,
     val persistentCount: Int = 0,
     val isThrottledForThermalSafety: Boolean = false,
-    val storageLimitMb: Int = 5120
+    val storageLimitMb: Int = 5120,
+    val wakeOnMotionSleeping: Boolean = false,
+    val wakeOnMotionSavedFrames: Long = 0L,
+    val ponderModeActive: Boolean = false
 )
 
 class CheasstViewModel(application: Application) : AndroidViewModel(application) {
@@ -63,7 +74,7 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
     private val _consoleLogs = MutableStateFlow<List<String>>(listOf(
         "[SYSTEM] Cheasst Grandmaster Vision Engine v2.1 online",
         "[STATUS] Perspective: Playing as BLACK ♚",
-        "[CAMERA] Spatial AR alignment locked. Awaiting move..."
+        "[CAMERA] Spatial AR alignment locked. Wake-on-Motion active."
     ))
     val consoleLogs: StateFlow<List<String>> = _consoleLogs.asStateFlow()
 
@@ -84,6 +95,12 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
 
     private val _isAnalyzing = MutableStateFlow(false)
     val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
+
+    private val _ponderPrediction = MutableStateFlow<PonderPrediction?>(null)
+    val ponderPrediction: StateFlow<PonderPrediction?> = _ponderPrediction.asStateFlow()
+
+    private val _isPonderHit = MutableStateFlow(false)
+    val isPonderHit: StateFlow<Boolean> = _isPonderHit.asStateFlow()
 
     private val _aiAdvice = MutableStateFlow<AiStrategicAdvice?>(null)
     val aiAdvice: StateFlow<AiStrategicAdvice?> = _aiAdvice.asStateFlow()
@@ -110,6 +127,7 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
     val hardwareMetrics: StateFlow<HardwareMetrics> = _hardwareMetrics.asStateFlow()
 
     private var analysisJob: Job? = null
+    private var ponderJob: Job? = null
     private var telemetryJob: Job? = null
 
     init {
@@ -190,6 +208,19 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun makeMove(move: Move) {
+        val currentPonder = _ponderPrediction.value
+        val isOpponentTurn = (_board.value.activeColor != _playerColor.value)
+        if (isOpponentTurn && currentPonder != null) {
+            if (currentPonder.expectedOpponentMove.from == move.from && currentPonder.expectedOpponentMove.to == move.to) {
+                _isPonderHit.value = true
+                addLog("⚡ [PONDER HIT 0ms] Predicted opponent move executed! Instant reply ready: ${currentPonder.instantCounterMove.san}")
+            } else {
+                _isPonderHit.value = false
+            }
+        } else {
+            _isPonderHit.value = false
+        }
+
         val newBoard = _board.value.makeMove(move)
         _board.value = newBoard
         _moveHistory.value = _moveHistory.value + move
@@ -288,10 +319,55 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
                 if (speakBestMove && currentBoard.activeColor == pColor) {
                     speechManager.speakMove(best, isMate = result.isCheckmate)
                 }
+
+                // If it is the opponent's turn, launch background Ponder Mode to calculate instant counter
+                if (currentBoard.activeColor != pColor && !result.isCheckmate) {
+                    startPonderMode(currentBoard, pColor)
+                }
             } else if (result.isCheckmate) {
                 val winner = if (currentBoard.activeColor == PieceColor.WHITE) "BLACK" else "WHITE"
                 addLog("CHECKMATE DETECTED. VICTORY FOR $winner.")
                 speechManager.speak("Checkmate! Game over.")
+            }
+        }
+    }
+
+    private fun startPonderMode(currentBoard: Board, pColor: PieceColor) {
+        ponderJob?.cancel()
+        ponderJob = viewModelScope.launch {
+            _hardwareMetrics.value = _hardwareMetrics.value.copy(ponderModeActive = true)
+            val legal = currentBoard.generateLegalMoves()
+            if (legal.isEmpty()) return@launch
+
+            // Predict opponent move via opening book or fast engine evaluation
+            val book = OpeningBook.lookup(currentBoard.toFen())
+            val predictedOpponentMove = if (book != null) {
+                legal.find { it.from.name == book.fromSquare && it.to.name == book.toSquare } ?: legal.first()
+            } else {
+                val oppSearch = engine.analyze(
+                    board = currentBoard,
+                    settings = CalculationSettings(isFast = true, isSuperFast = true)
+                )
+                oppSearch.bestMove ?: legal.first()
+            }
+
+            // Speculatively play the anticipated opponent move
+            val speculatedBoard = currentBoard.makeMove(predictedOpponentMove)
+            val counterAnalysis = engine.analyze(
+                board = speculatedBoard,
+                settings = CalculationSettings(isFast = true, isSuperFast = true)
+            )
+            val counterMove = counterAnalysis.bestMove ?: speculatedBoard.generateLegalMoves().firstOrNull()
+
+            if (counterMove != null) {
+                _ponderPrediction.value = PonderPrediction(
+                    expectedOpponentMove = predictedOpponentMove,
+                    instantCounterMove = counterMove,
+                    predictedEval = counterAnalysis.formattedEval,
+                    calculationDepth = counterAnalysis.depth,
+                    isPonderReady = true
+                )
+                addLog("⚡ [PONDER PREDICTED] Expecting opponent ${predictedOpponentMove.san}. Counter-move primed: ${counterMove.san}")
             }
         }
     }
@@ -385,6 +461,23 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
     fun processCameraFrame(bitmap: Bitmap) {
         val result = BoardDetector.detectBoard(bitmap, _board.value)
         _visionResult.value = result
+
+        // Update hardware metrics with Wake-on-Motion telemetry
+        val wom = result.wakeOnMotionMetrics
+        _hardwareMetrics.value = _hardwareMetrics.value.copy(
+            wakeOnMotionSleeping = wom.isSleeping,
+            wakeOnMotionSavedFrames = wom.framesSkippedCount
+        )
+
+        // Auto-handle detected move if real-time tracking is enabled
+        val detected = result.detectedMoveEvent
+        if (detected != null && _isLiveTracking.value) {
+            val legal = _board.value.generateLegalMoves()
+            val match = legal.find { it.from == detected.from && it.to == detected.to }
+            if (match != null) {
+                confirmPlayerMove(match)
+            }
+        }
     }
 
     fun setStorageLimitMb(mb: Int) {
