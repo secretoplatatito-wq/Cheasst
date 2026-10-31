@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for Cheasst, an offline-first AI chess assistant featuring real-time camera chessboard vision, a high-performance local evaluation engine with 6 specialized Grandmaster modes, interactive board analysis, memory persistence, and optional Gemini AI intelligence.",
+  "updatedAt":  "2026-10-31T09:22:30.197065106Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

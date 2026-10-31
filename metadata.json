@@ -1,0 +1,6 @@
+{
+  "name": "Cheasst",
+  "description": "AI-Powered Mobile Chess Vision, Analysis & Assistant with offline calculation engine, camera chessboard scanner, and 6 grandmaster modes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

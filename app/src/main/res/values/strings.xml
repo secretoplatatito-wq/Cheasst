@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Cheasst</string>
+    <string name="app_tagline">Mobile AI Chess Vision &amp; Assistant</string>
+    <string name="title_home">Home</string>
+    <string name="title_camera">Vision</string>
+    <string name="title_analysis">Analysis</string>
+    <string name="title_modes">Modes</string>
+    <string name="title_memory">Memory</string>
+    <string name="title_settings">Settings</string>
+</resources>
