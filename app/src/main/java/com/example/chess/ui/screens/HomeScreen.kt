@@ -40,6 +40,8 @@ fun HomeScreen(
     onNavigateToAnalysis: () -> Unit,
     onNavigateToModes: () -> Unit,
     onNavigateToMemory: () -> Unit,
+    onNavigateToDigital: () -> Unit = {},
+    onNavigateToCoach: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -71,9 +73,9 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
-                        painter = painterResource(id = R.drawable.ic_cheasst_logo_1793438842481),
+                        painter = painterResource(id = R.drawable.ic_cheasst_badge),
                         contentDescription = "Cheasst Logo",
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(34.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -216,6 +218,32 @@ fun HomeScreen(
                 onClick = onNavigateToMemory,
                 modifier = Modifier.weight(1f),
                 testTag = "home_memory_tile"
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            ActionTile(
+                title = "Digital Board",
+                subtitle = "Chess.com / Lichess",
+                icon = Icons.Default.Screenshot,
+                iconColor = TacticalEmerald,
+                onClick = onNavigateToDigital,
+                modifier = Modifier.weight(1f),
+                testTag = "home_digital_tile"
+            )
+            ActionTile(
+                title = "AI Coach & Tutor",
+                subtitle = "Gemini grandmaster chat",
+                icon = Icons.Default.Psychology,
+                iconColor = CyberCyan,
+                onClick = onNavigateToCoach,
+                modifier = Modifier.weight(1f),
+                testTag = "home_coach_tile"
             )
         }
 

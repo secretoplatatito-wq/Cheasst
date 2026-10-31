@@ -43,6 +43,7 @@ import com.example.chess.model.Square
 import com.example.chess.ui.CheasstViewModel
 import com.example.chess.ui.components.AiAdviceDialog
 import com.example.chess.ui.components.ManualBoardCorrectionSheet
+import com.example.chess.ui.components.SeeMateArOverlay
 import com.example.ui.theme.*
 
 @Composable
@@ -61,6 +62,7 @@ fun CameraVisionScreen(
     val consoleLogs by viewModel.consoleLogs.collectAsState()
     val isAiThinking by viewModel.isAiThinking.collectAsState()
     val aiAdvice by viewModel.aiAdvice.collectAsState()
+    val visionResult by viewModel.visionResult.collectAsState()
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -78,19 +80,9 @@ fun CameraVisionScreen(
     var showAiAdviceDialog by remember { mutableStateOf(false) }
     var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
 
-    // Pulsing animation for AR highlight
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse_transition")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 0.85f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse_alpha"
-    )
-
     val bestMove = analysisResult?.bestMove
+    val candidateMoves = analysisResult?.candidateMoves ?: emptyList()
+    val formattedEval = analysisResult?.formattedEval ?: "+0.00"
     val isUserTurn = board.activeColor == playerColor
     val logListState = rememberLazyListState()
 
@@ -98,6 +90,18 @@ fun CameraVisionScreen(
     LaunchedEffect(consoleLogs.size) {
         if (consoleLogs.isNotEmpty()) {
             logListState.animateScrollToItem(consoleLogs.size - 1)
+        }
+    }
+
+    // Auto-confirm detected opponent move when emitted by vision tracker
+    LaunchedEffect(visionResult?.detectedMoveEvent) {
+        val detected = visionResult?.detectedMoveEvent
+        if (detected != null && board.activeColor != playerColor) {
+            val legal = board.generateLegalMoves().find { it.from == detected.from && it.to == detected.to }
+            if (legal != null) {
+                viewModel.addLog("automated opponent move recognized: ${legal.san}")
+                viewModel.makeMove(legal)
+            }
         }
     }
 
@@ -125,6 +129,15 @@ fun CameraVisionScreen(
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
 
+                        imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                            // Convert imageProxy bitmap if supported or process
+                            val bitmap = previewView.bitmap
+                            if (bitmap != null) {
+                                viewModel.processCameraFrame(bitmap)
+                            }
+                            imageProxy.close()
+                        }
+
                         val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
                         try {
                             cameraProvider.unbindAll()
@@ -135,7 +148,7 @@ fun CameraVisionScreen(
                                 imageAnalysis
                             )
                         } catch (exc: Exception) {
-                            // Handled gracefully in container/emulator
+                            // Handled gracefully in emulator
                         }
                     }, ContextCompat.getMainExecutor(ctx))
                     previewView
@@ -173,7 +186,7 @@ fun CameraVisionScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Cheasst uses the camera to recognize physical chessboards and calculate moves in real-time.",
+                        text = "Cheasst uses the camera to auto-track physical chessboards, identify opponent moves in real-time, and project SeeMate AR arrows.",
                         color = TextSecondary,
                         fontSize = 13.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -190,176 +203,22 @@ fun CameraVisionScreen(
             }
         }
 
-        // 2. Real-Time AR Spatial Chessboard Overlay (PJ Chess style)
+        // 2. Real-Time SeeMate AR Spatial Chessboard Overlay (Canvas with arrows, brackets, [Nf6 +0.26] pill)
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth(0.92f)
                 .aspectRatio(1f)
-                .padding(bottom = 60.dp)
+                .padding(bottom = 50.dp)
         ) {
-            // Glowing Cyan Outer Reticle
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .border(2.dp, CyberCyan.copy(alpha = 0.85f), RoundedCornerShape(10.dp))
+            SeeMateArOverlay(
+                bestMove = bestMove,
+                candidateMoves = candidateMoves,
+                formattedEval = formattedEval,
+                depth = analysisResult?.depth ?: 14,
+                playerColor = playerColor,
+                modifier = Modifier.fillMaxSize()
             )
-
-            // Dynamic Coordinate Labels along the perimeter based on player perspective
-            val filesList = if (playerColor == PieceColor.BLACK) {
-                listOf("h", "g", "f", "e", "d", "c", "b", "a")
-            } else {
-                listOf("a", "b", "c", "d", "e", "f", "g", "h")
-            }
-
-            val ranksList = if (playerColor == PieceColor.BLACK) {
-                listOf("1", "2", "3", "4", "5", "6", "7", "8")
-            } else {
-                listOf("8", "7", "6", "5", "4", "3", "2", "1")
-            }
-
-            // Top File Labels
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.TopCenter)
-                    .padding(top = 2.dp),
-                horizontalArrangement = Arrangement.SpaceAround
-            ) {
-                filesList.forEach { f ->
-                    Text(
-                        text = f,
-                        color = CyberCyan.copy(alpha = 0.9f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
-
-            // Left Rank Labels
-            Column(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .align(Alignment.CenterStart)
-                    .padding(start = 3.dp),
-                verticalArrangement = Arrangement.SpaceAround
-            ) {
-                ranksList.forEach { r ->
-                    Text(
-                        text = r,
-                        color = CyberCyan.copy(alpha = 0.9f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
-
-            // 8x8 Grid overlay
-            Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
-                repeat(8) { displayRow ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    ) {
-                        repeat(8) { displayCol ->
-                            // Map display grid cell to chess square
-                            val actualFile = if (playerColor == PieceColor.BLACK) 7 - displayCol else displayCol
-                            val actualRank = if (playerColor == PieceColor.BLACK) displayRow else 7 - displayRow
-                            val currentSquare = Square.at(actualFile, actualRank)
-
-                            val isSource = bestMove != null && bestMove.from == currentSquare
-                            val isTarget = bestMove != null && bestMove.to == currentSquare
-
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .border(0.5.dp, Color.White.copy(alpha = 0.07f))
-                                    .then(
-                                        if (isSource) {
-                                            Modifier
-                                                .background(TacticalEmerald.copy(alpha = pulseAlpha * 0.45f))
-                                                .border(2.dp, TacticalEmerald, RoundedCornerShape(4.dp))
-                                        } else if (isTarget) {
-                                            Modifier
-                                                .background(TacticalEmerald.copy(alpha = pulseAlpha * 0.55f))
-                                                .border(2.dp, TacticalEmerald, RoundedCornerShape(4.dp))
-                                        } else {
-                                            Modifier
-                                        }
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (isTarget) {
-                                    // Target Bullseye ring
-                                    Box(
-                                        modifier = Modifier
-                                            .size(12.dp)
-                                            .clip(CircleShape)
-                                            .background(TacticalEmerald)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Floating AR Move Badge
-            if (bestMove != null) {
-                val pieceName = bestMove.piece.type.name
-                val fromName = bestMove.from.name
-                val toName = bestMove.to.name
-                val eval = analysisResult?.formattedEval ?: ""
-
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .offset(y = (-36).dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(ObsidianBg.copy(alpha = 0.92f))
-                        .border(1.5.dp, TacticalEmerald, RoundedCornerShape(20.dp))
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(TacticalEmerald)
-                        )
-                        Text(
-                            text = "BEST MOVE:",
-                            color = TacticalEmerald,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Text(
-                            text = "$pieceName $fromName -> $toName",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        if (eval.isNotBlank()) {
-                            Text(
-                                text = "($eval)",
-                                color = CyberCyan,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         // 3. Top HUD: Perspective, Turn status, Audio toggle, Gemini bridge
@@ -450,19 +309,19 @@ fun CameraVisionScreen(
             }
         }
 
-        // 4. Bottom Section: Monospace Terminal Console & Quick Actions
+        // 4. Bottom Section: Monospace Terminal Console & Action Buttons
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 18.dp),
+                .padding(horizontal = 14.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Hacker Terminal Console Box (matches the video)
+            // Hacker Terminal Console Box (matches the reverse.dev slide & video)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(96.dp)
+                    .height(86.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF090D12).copy(alpha = 0.92f))
                     .border(1.dp, Color(0xFF1E2838), RoundedCornerShape(8.dp))
@@ -479,6 +338,7 @@ fun CameraVisionScreen(
                                 log.contains("CHECKMATE") -> TacticalRed
                                 log.contains("new move sent") -> TacticalEmerald
                                 log.contains("query stockfish") -> CyberCyan
+                                log.contains("automated opponent move") -> TacticalEmerald
                                 log.contains("player move confirmed") -> Color(0xFF64B5F6)
                                 else -> Color(0xFF90A4AE)
                             },
@@ -491,17 +351,15 @@ fun CameraVisionScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Fast Demo Preset Chips
+            // Presets
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Blackburne Shilling Demo Preset (from the video!)
                 SuggestionChip(
                     onClick = {
-                        // 1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5
                         viewModel.setPlayerColor(PieceColor.BLACK)
                         viewModel.resetBoard("r1bqkbnr/pppp1ppp/8/4N3/2Bn4/8/PPPP1PPP/RNBQK2R b KQkq - 0 4")
                         viewModel.addLog("loaded Blackburne Shilling Gambit position (PJ Chess demo)")
@@ -555,7 +413,7 @@ fun CameraVisionScreen(
                     )
                 }
 
-                // Simulate Opponent's Move (allows real-time turn stepping without physical hands)
+                // Simulate / Step Opponent's Move
                 Button(
                     onClick = { viewModel.stepOpponentMove() },
                     colors = ButtonDefaults.buttonColors(containerColor = ElevatedSlate),

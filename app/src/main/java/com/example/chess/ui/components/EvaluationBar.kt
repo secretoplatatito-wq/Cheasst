@@ -80,3 +80,59 @@ fun EvaluationBar(
         )
     }
 }
+
+@Composable
+fun EvaluationBar(
+    centipawns: Int,
+    formattedScore: String,
+    isWhiteTurn: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val winProbability = (1.0 / (1.0 + Math.exp(-centipawns / 400.0)) * 100).toInt().coerceIn(1, 99)
+    val targetFraction = (winProbability / 100f).coerceIn(0.05f, 0.95f)
+    val animatedFraction by animateFloatAsState(targetValue = targetFraction, label = "eval_anim_direct")
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(38.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .border(1.dp, CardBorderSlate, RoundedCornerShape(8.dp))
+            .background(ElevatedSlate)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = "W: ${winProbability}%",
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+        )
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(14.dp)
+                .padding(horizontal = 8.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .background(Color(0xFF263238))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(animatedFraction)
+                    .background(Color.White)
+            )
+        }
+
+        Text(
+            text = formattedScore,
+            color = if (centipawns >= 0) TacticalEmerald else Color(0xFFFF8A80),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace
+        )
+    }
+}

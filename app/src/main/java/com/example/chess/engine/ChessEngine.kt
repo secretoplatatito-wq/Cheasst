@@ -36,8 +36,14 @@ data class AnalysisResult(
     val calculationTimeMs: Long,
     val nodesPerSecond: Long,
     val isCheckmate: Boolean = false,
-    val isStalemate: Boolean = false
+    val isStalemate: Boolean = false,
+    val acasMetrics: AcasAccuracyMetrics? = null,
+    val lc0Policy: Lc0PolicyDistribution? = null,
+    val engineSource: String = "Local Fast Minimax"
 ) {
+    val depth: Int get() = depthReached
+    val centipawnScore: Int get() = evaluationCp
+
     val formattedEval: String
         get() {
             if (isCheckmate) return if (evaluationCp > 0) "+Mate" else "-Mate"

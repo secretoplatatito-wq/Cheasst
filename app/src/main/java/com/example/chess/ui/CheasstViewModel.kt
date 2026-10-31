@@ -35,7 +35,9 @@ data class HardwareMetrics(
     val cpuUtilizationPercent: Int = 18,
     val batteryPercent: Int = 85,
     val tempCacheKb: Long = 124,
-    val persistentCount: Int = 0
+    val persistentCount: Int = 0,
+    val isThrottledForThermalSafety: Boolean = false,
+    val storageLimitMb: Int = 5120
 )
 
 class CheasstViewModel(application: Application) : AndroidViewModel(application) {
@@ -124,13 +126,25 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
                 val used = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
                 val total = runtime.totalMemory() / (1024 * 1024)
                 val max = runtime.maxMemory() / (1024 * 1024)
+                val freeMb = max - used
 
                 val bm = getApplication<Application>().getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
                 val battery = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 85
                 val cpuEst = if (_isAnalyzing.value) (45..75).random() else (8..22).random()
                 val count = dao.getCount()
 
-                _hardwareMetrics.value = HardwareMetrics(
+                // Auto-tune / throttle if RAM is critically constrained (< 200MB free) to avoid device heating
+                val isThrottled = freeMb < 200
+                if (isThrottled && !_settings.value.isFast) {
+                    _settings.value = _settings.value.copy(
+                        isFast = true,
+                        cpuThreads = 2,
+                        hashMemoryMb = 32
+                    )
+                    addLog("[THERMAL GUARD] RAM pressure detected (${freeMb}MB free). Auto-throttled calculation to keep device cool.")
+                }
+
+                _hardwareMetrics.value = _hardwareMetrics.value.copy(
                     usedRamMb = used,
                     totalRamMb = total,
                     maxRamMb = max,
@@ -138,7 +152,8 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
                     cpuUtilizationPercent = cpuEst,
                     batteryPercent = battery,
                     tempCacheKb = (_moveHistory.value.size * 4L) + 64L,
-                    persistentCount = count
+                    persistentCount = count,
+                    isThrottledForThermalSafety = isThrottled
                 )
                 delay(2000L)
             }
@@ -251,10 +266,14 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
             _isAnalyzing.value = true
             val currentBoard = _board.value
             val pColor = _playerColor.value
-            val result = engine.analyze(
+            val isFast = _settings.value.isFast || _settings.value.isSuperFast
+            val profile = _settings.value.activeProfile
+
+            val result = com.example.chess.engine.MultiEngineService.analyzePosition(
                 board = currentBoard,
-                settings = _settings.value,
-                playerPerspective = pColor
+                profile = profile,
+                playerPerspective = pColor,
+                isFast = isFast
             )
             _analysisResult.value = result
             _isAnalyzing.value = false
@@ -364,8 +383,12 @@ class CheasstViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun processCameraFrame(bitmap: Bitmap) {
-        val result = BoardDetector.detectBoard(bitmap)
+        val result = BoardDetector.detectBoard(bitmap, _board.value)
         _visionResult.value = result
+    }
+
+    fun setStorageLimitMb(mb: Int) {
+        _hardwareMetrics.value = _hardwareMetrics.value.copy(storageLimitMb = mb.coerceIn(256, 5120))
     }
 
     fun applyDetectedFen(fen: String) {

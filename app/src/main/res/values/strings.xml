@@ -5,6 +5,8 @@
     <string name="title_camera">Vision</string>
     <string name="title_analysis">Analysis</string>
     <string name="title_modes">Modes</string>
+    <string name="title_digital">Digital</string>
+    <string name="title_coach">AI Coach</string>
     <string name="title_memory">Memory</string>
     <string name="title_settings">Settings</string>
 </resources>

@@ -173,16 +173,42 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            Text(
-                text = "Cheasst enforces a 3-4 GB RAM ceiling to guarantee fluid responsiveness across low and high-end devices.",
-                color = TextSecondary,
-                fontSize = 11.sp
-            )
+            // Dynamic Thermal & RAM Guard Indicator
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (hardwareMetrics.isThrottledForThermalSafety) TacticalAmber.copy(alpha = 0.15f) else Color(0xFF0F2618))
+                    .border(1.dp, if (hardwareMetrics.isThrottledForThermalSafety) TacticalAmber else TacticalEmerald, RoundedCornerShape(8.dp))
+                    .padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (hardwareMetrics.isThrottledForThermalSafety) Icons.Default.Thermostat else Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = if (hardwareMetrics.isThrottledForThermalSafety) TacticalAmber else TacticalEmerald,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = if (hardwareMetrics.isThrottledForThermalSafety) "THERMAL GUARD: ACTIVE (RAM Throttled)" else "THERMAL STATUS: OPTIMAL & COOL",
+                        color = if (hardwareMetrics.isThrottledForThermalSafety) TacticalAmber else TacticalEmerald,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (hardwareMetrics.isThrottledForThermalSafety) "Search depth lowered to 4 to prevent phone heating." else "Automated monitor ensures phone never overheats.",
+                        color = TextSecondary,
+                        fontSize = 10.sp
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Storage & Memory Cleanup Card
+        // Storage & Memory Cleanup Card (Up to 5 GB Storage Management)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -192,13 +218,31 @@ fun SettingsScreen(
                 .padding(14.dp)
         ) {
             Text(
-                text = "MEMORY CLEANUP & CACHE",
+                text = "STORAGE MEMORY QUOTA (MAX 5 GB)",
                 color = TextSecondary,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
             Spacer(modifier = Modifier.height(8.dp))
+
+            val storageGb = (hardwareMetrics.storageLimitMb / 1024f)
+            Text(
+                text = "Max Storage Cache Limit: ${"%.1f".format(storageGb)} GB (${hardwareMetrics.storageLimitMb} MB)",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Slider(
+                value = hardwareMetrics.storageLimitMb.toFloat(),
+                onValueChange = { viewModel.setStorageLimitMb(it.toInt()) },
+                valueRange = 256f..5120f,
+                steps = 18,
+                colors = SliderDefaults.colors(thumbColor = TacticalEmerald, activeTrackColor = TacticalEmerald),
+                modifier = Modifier.testTag("storage_quota_slider")
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             Text(
                 text = "Temporary Calculation Cache: ${hardwareMetrics.tempCacheKb} KB",

@@ -36,7 +36,9 @@ import com.example.ui.theme.TextMuted
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Home : Screen("home", "Home", Icons.Default.Home)
     object Camera : Screen("camera", "Vision", Icons.Default.CameraAlt)
+    object DigitalScreen : Screen("digital", "Digital", Icons.Default.Screenshot)
     object Analysis : Screen("analysis", "Analysis", Icons.Default.Analytics)
+    object Coach : Screen("coach", "Coach", Icons.Default.Psychology)
     object Modes : Screen("modes", "Modes", Icons.Default.Speed)
     object Memory : Screen("memory", "Memory", Icons.Default.Bookmark)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
@@ -64,9 +66,9 @@ fun CheasstApp() {
     val navigationItems = listOf(
         Screen.Home,
         Screen.Camera,
+        Screen.DigitalScreen,
         Screen.Analysis,
-        Screen.Modes,
-        Screen.Memory,
+        Screen.Coach,
         Screen.Settings
     )
 
@@ -130,7 +132,9 @@ fun CheasstApp() {
                     onNavigateToCamera = { navController.navigate(Screen.Camera.route) },
                     onNavigateToAnalysis = { navController.navigate(Screen.Analysis.route) },
                     onNavigateToModes = { navController.navigate(Screen.Modes.route) },
-                    onNavigateToMemory = { navController.navigate(Screen.Memory.route) }
+                    onNavigateToMemory = { navController.navigate(Screen.Memory.route) },
+                    onNavigateToDigital = { navController.navigate(Screen.DigitalScreen.route) },
+                    onNavigateToCoach = { navController.navigate(Screen.Coach.route) }
                 )
             }
             composable(Screen.Camera.route) {
@@ -139,8 +143,18 @@ fun CheasstApp() {
                     onNavigateToAnalysis = { navController.navigate(Screen.Analysis.route) }
                 )
             }
+            composable(Screen.DigitalScreen.route) {
+                DigitalScreenModeScreen(
+                    viewModel = viewModel
+                )
+            }
             composable(Screen.Analysis.route) {
                 AnalysisScreen(
+                    viewModel = viewModel
+                )
+            }
+            composable(Screen.Coach.route) {
+                AiCoachChatScreen(
                     viewModel = viewModel
                 )
             }

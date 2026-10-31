@@ -274,6 +274,92 @@ fun AnalysisScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        // Multi-Engine, Lc0 & ACAS Analytics Card
+        val lc0 = analysisResult?.lc0Policy
+        val acas = analysisResult?.acasMetrics
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(ElevatedSlate)
+                .border(1.dp, CardBorderSlate, RoundedCornerShape(12.dp))
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "ENGINE & ACCURACY TELEMETRY",
+                    color = TextSecondary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF0F2618))
+                        .border(1.dp, TacticalEmerald, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = analysisResult?.engineSource ?: "Stockfish + Lc0",
+                        color = TacticalEmerald,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Chesalyser / A.C.A.S Accuracy metrics
+            if (acas != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("Move Accuracy", color = TextSecondary, fontSize = 10.sp)
+                        Text("${"%.1f".format(acas.accuracyScore)}%", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Column {
+                        Text("Centipawn Loss", color = TextSecondary, fontSize = 10.sp)
+                        Text("${acas.averageCentipawnLoss} ACPL", color = CyberCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Column {
+                        Text("Move Rating", color = TextSecondary, fontSize = 10.sp)
+                        Text(acas.moveClassification, color = TacticalEmerald, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // Lc0 Positional Policy Themes
+            if (lc0 != null) {
+                Text(
+                    text = "Lc0 Positional Themes: ${lc0.positionalThemes.joinToString(", ")}",
+                    color = TextPrimary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Win: ${(lc0.winRate * 100).toInt()}%", color = TacticalEmerald, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Draw: ${(lc0.drawRate * 100).toInt()}%", color = TextSecondary, fontSize = 11.sp)
+                    Text("Loss: ${(lc0.lossRate * 100).toInt()}%", color = Color(0xFFFF8A80), fontSize = 11.sp)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
         // AI Grandmaster Advisor Button
         Button(
             onClick = {
