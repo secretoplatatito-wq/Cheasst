@@ -71,7 +71,7 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                        painter = painterResource(id = R.drawable.ic_cheasst_logo_1793438842481),
                         contentDescription = "Cheasst Logo",
                         modifier = Modifier.size(38.dp)
                     )

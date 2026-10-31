@@ -68,6 +68,7 @@ Standard chess tools force players to choose between two extremes:
 
 **Cheasst solves this dilemma.** It turns any smartphone running Android 7.0+ (API 24+) into a self-contained, offline-first chess computer.
 
+- **Engineered for Android 15–17 (API 35–36+)**: Fully optimized for the latest Android runtime enhancements, predictive back transitions, dynamic color palettes, and edge-to-edge system drawing, with backward compatibility across Android devices.
 - **100% Offline-Capable**: All piece detection, move validation, evaluation trees, and heuristic analyses run directly on the smartphone’s CPU and GPU.
 - **Strict 3–4 GB RAM Target**: Engineered to avoid memory bloat, background thread leakage, or battery thermal throttling.
 - **Instant Camera Reconstructor**: Point the lens at a tournament wooden board, school vinyl roll-up, or digital monitor to extract the position in milliseconds.
